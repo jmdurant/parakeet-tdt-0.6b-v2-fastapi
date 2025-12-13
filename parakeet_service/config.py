@@ -5,7 +5,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-MODEL_NAME = "nvidia/parakeet-tdt-0.6b-v2"  # Keep hardcoded as requested
+# Note: v3 requires rebuild with --no-cache to pre-download, then copy cache from image to host
+# To upgrade: 1) docker compose build --no-cache  2) copy /root/.cache/huggingface to ./data/cache/
+MODEL_NAME = "nvidia/parakeet-tdt-0.6b-v2"
 
 # Configuration from environment variables
 TARGET_SR = int(os.getenv("TARGET_SR", "16000"))          # model’s native sample-rate

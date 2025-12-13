@@ -3,7 +3,9 @@ import io, wave, tempfile, numpy as np, torch
 from typing import List
 from torch.hub import load as torch_hub_load
 
-vad_model, vad_utils = torch_hub_load("snakers4/silero-vad", "silero_vad")
+# Use cached repo from Docker build (see Dockerfile pre-download step)
+SILERO_VAD_PATH = "/root/.cache/torch/hub/snakers4_silero-vad_master"
+vad_model, vad_utils = torch_hub_load(SILERO_VAD_PATH, "silero_vad", source='local', trust_repo=True)
 (_, _, _, VADIterator, _) = vad_utils
 
 # TODO: Update to read from .env

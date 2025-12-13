@@ -1,17 +1,30 @@
 services:
   parakeet:
     build: .
-    container_name: parakeet-stt
+    container_name: ${COMPOSE_PROJECT_NAME}-parakeet-asr
     ports:
       - "8000:8000"
-    # env_file: .env               # TODO
+    env_file: .env
     environment:
-      LOG_LEVEL: "INFO"
+      - LOG_LEVEL=INFO
+      - HF_HUB_OFFLINE=1
     volumes:
       - ./data/cache:/root/.cache
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: "4"
-    #       memory: 4G
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    external: true
+    name: ${FRONTEND_NETWORK}

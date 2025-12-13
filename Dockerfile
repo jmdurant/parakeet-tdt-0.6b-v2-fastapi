@@ -23,6 +23,13 @@ RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt \
  && pip cache purge
 
+# Pre-download Silero VAD model so it's available at runtime without internet
+RUN python -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)"
+
+# Pre-download Parakeet model from HuggingFace so it's available at runtime without internet
+# Note: Change version here when upgrading, then rebuild with --no-cache
+RUN python -c "import nemo.collections.asr as nemo_asr; nemo_asr.models.ASRModel.from_pretrained('nvidia/parakeet-tdt-0.6b-v2')"
+
 # Stage 2: Runtime stage
 FROM python:3.10.7-slim
 
@@ -36,6 +43,8 @@ WORKDIR /app
 COPY ./parakeet_service ./parakeet_service
 COPY .env.example .env
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /root/.cache/torch /root/.cache/torch
+COPY --from=builder /root/.cache/huggingface /root/.cache/huggingface
 
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
