@@ -1,6 +1,10 @@
 # Stage 1: Builder stage for installing dependencies
 FROM python:3.10.7-slim AS builder
 
+# Model configuration - override with --build-arg or via docker-compose
+ARG PARAKEET_MODEL=nvidia/parakeet-tdt-0.6b-v2
+ARG SILERO_VAD_REPO=snakers4/silero-vad
+
 # Install system dependencies including ffmpeg
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -24,11 +28,10 @@ RUN pip install --no-cache-dir --upgrade pip \
  && pip cache purge
 
 # Pre-download Silero VAD model so it's available at runtime without internet
-RUN python -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)"
+RUN python -c "import torch; torch.hub.load('${SILERO_VAD_REPO}', 'silero_vad', trust_repo=True)"
 
 # Pre-download Parakeet model from HuggingFace so it's available at runtime without internet
-# Note: Change version here when upgrading, then rebuild with --no-cache
-RUN python -c "import nemo.collections.asr as nemo_asr; nemo_asr.models.ASRModel.from_pretrained('nvidia/parakeet-tdt-0.6b-v2')"
+RUN python -c "import nemo.collections.asr as nemo_asr; nemo_asr.models.ASRModel.from_pretrained('${PARAKEET_MODEL}')"
 
 # Stage 2: Runtime stage
 FROM python:3.10.7-slim

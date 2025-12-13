@@ -1,6 +1,10 @@
 services:
   parakeet:
-    build: .
+    build:
+      context: .
+      args:
+        - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v2}
+        - SILERO_VAD_REPO=${SILERO_VAD_REPO:-snakers4/silero-vad}
     container_name: ${COMPOSE_PROJECT_NAME}-parakeet-asr
     ports:
       - "8000:8000"
@@ -8,6 +12,7 @@ services:
     environment:
       - LOG_LEVEL=INFO
       - HF_HUB_OFFLINE=1
+      - PARAKEET_MODEL=${PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v2}
     volumes:
       - ./data/cache:/root/.cache
     deploy:
