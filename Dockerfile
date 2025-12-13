@@ -43,13 +43,22 @@ WORKDIR /app
 COPY ./parakeet_service ./parakeet_service
 COPY .env.example .env
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /root/.cache/torch /root/.cache/torch
-COPY --from=builder /root/.cache/huggingface /root/.cache/huggingface
+
+# Copy models to backup location (won't be overwritten by volume mounts)
+COPY --from=builder /root/.cache/torch /opt/model-cache/torch
+COPY --from=builder /root/.cache/huggingface /opt/model-cache/huggingface
+
+# Copy init script that populates cache on first run
+COPY init.sh /app/init.sh
+RUN chmod +x /app/init.sh
 
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 EXPOSE 8000
+
+# Use init.sh as entrypoint to handle cache initialization
+ENTRYPOINT ["/app/init.sh"]
 CMD ["uvicorn", "parakeet_service.main:app", \
      "--host", "0.0.0.0", "--port", "8000"]
