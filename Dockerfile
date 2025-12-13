@@ -2,7 +2,7 @@
 FROM python:3.10.7-slim AS builder
 
 # Model configuration - override with --build-arg or via docker-compose
-ARG PARAKEET_MODEL=nvidia/parakeet-tdt-0.6b-v2
+ARG PARAKEET_MODEL=nvidia/parakeet-tdt-0.6b-v3
 ARG SILERO_VAD_REPO=snakers4/silero-vad
 
 # Install system dependencies including ffmpeg

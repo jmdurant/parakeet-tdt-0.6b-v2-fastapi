@@ -7,7 +7,7 @@ load_dotenv()
 
 # Model name - configurable via PARAKEET_MODEL env var
 # To change models: update .env, rebuild with --no-cache
-MODEL_NAME = os.getenv("PARAKEET_MODEL", "nvidia/parakeet-tdt-0.6b-v2")
+MODEL_NAME = os.getenv("PARAKEET_MODEL", "nvidia/parakeet-tdt-0.6b-v3")
 
 # Configuration from environment variables
 TARGET_SR = int(os.getenv("TARGET_SR", "16000"))          # model’s native sample-rate
