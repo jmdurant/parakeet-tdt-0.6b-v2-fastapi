@@ -9,3 +9,5 @@ pytest
 python-multipart
 ffmpeg-python
 python-dotenv
+jinja2
+psutil

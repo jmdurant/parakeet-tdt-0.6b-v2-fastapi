@@ -15,6 +15,13 @@ from .config import logger
 from parakeet_service.model import reset_fast_path
 from parakeet_service.chunker import vad_chunk_lowmem, vad_chunk_streaming
 
+# Try to import psutil for metrics, make it optional
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 
 router = APIRouter(tags=["speech"])
 
@@ -198,6 +205,42 @@ async def transcribe_audio(
 @router.get("/debug/cfg")
 def show_cfg(request: Request):
     from omegaconf import OmegaConf
-    model = request.app.state.asr_model         
-    yaml_str = OmegaConf.to_yaml(model.cfg, resolve=True) 
+    model = request.app.state.asr_model
+    yaml_str = OmegaConf.to_yaml(model.cfg, resolve=True)
     return yaml_str
+
+
+@router.get("/metrics", summary="System metrics (CPU/RAM usage)")
+def get_metrics():
+    """Return current system resource usage for the UI."""
+    if not PSUTIL_AVAILABLE:
+        return {
+            "cpu_percent": 0,
+            "ram_percent": 0,
+            "ram_used_gb": 0,
+            "ram_total_gb": 0,
+            "error": "psutil not installed"
+        }
+
+    cpu_percent = psutil.cpu_percent(interval=0.1)
+    memory = psutil.virtual_memory()
+
+    return {
+        "cpu_percent": cpu_percent,
+        "ram_percent": memory.percent,
+        "ram_used_gb": round(memory.used / (1024**3), 2),
+        "ram_total_gb": round(memory.total / (1024**3), 2),
+    }
+
+
+@router.get("/status", summary="Transcription progress status")
+def get_status():
+    """Return current transcription progress. Placeholder for Phase 3."""
+    # TODO: Implement actual progress tracking in Phase 3
+    return {
+        "status": "idle",
+        "progress_percent": 0,
+        "current_chunk": 0,
+        "total_chunks": 0,
+        "partial_text": ""
+    }
