@@ -11,3 +11,9 @@ ffmpeg-python
 python-dotenv
 jinja2
 psutil
+
+# Optional ONNX backend (set MODEL_BACKEND=onnx in .env)
+# Uncomment if using ONNX backend:
+# onnx-asr
+# onnxruntime          # CPU only
+# onnxruntime-gpu      # CUDA/TensorRT (recommended for GPU)

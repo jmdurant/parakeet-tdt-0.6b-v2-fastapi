@@ -18,6 +18,15 @@ MAX_AUDIO_DURATION = int(os.getenv("MAX_AUDIO_DURATION", "30"))   # seconds
 VAD_THRESHOLD = float(os.getenv("VAD_THRESHOLD", "0.5"))
 PROCESSING_TIMEOUT = int(os.getenv("PROCESSING_TIMEOUT", "60"))    # seconds
 
+# Backend selection: "nemo" (default) or "onnx"
+MODEL_BACKEND = os.getenv("MODEL_BACKEND", "nemo")
+ONNX_MODEL_NAME = os.getenv("ONNX_MODEL_NAME", "base.int8")
+
+# Chunking method: "vad" (default, Silero VAD) or "silence" (FFmpeg silencedetect)
+CHUNKING_METHOD = os.getenv("CHUNKING_METHOD", "vad")
+SILENCE_THRESHOLD = os.getenv("SILENCE_THRESHOLD", "-30dB")
+SILENCE_DURATION = float(os.getenv("SILENCE_DURATION", "0.5"))
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=LOG_LEVEL,

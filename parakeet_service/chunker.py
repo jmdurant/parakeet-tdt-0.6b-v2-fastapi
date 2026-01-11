@@ -14,9 +14,11 @@ Offline VAD-aware splitters
 """
 
 from __future__ import annotations
-import tempfile, wave, pathlib, numpy as np
+import tempfile, wave, pathlib, numpy as np, subprocess, re
 from typing import List
 import soundfile as sf
+
+from .config import CHUNKING_METHOD, SILENCE_THRESHOLD, SILENCE_DURATION, logger
 
 
 from torch.hub import load as torch_hub_load
@@ -155,3 +157,135 @@ def vad_chunk_streaming(path: pathlib.Path) -> List[pathlib.Path]:
     if buf:
         paths.append(_flush(buf))
     return paths
+
+
+def ffmpeg_silence_chunk(
+    path: pathlib.Path,
+    max_chunk_sec: float = 90,
+    silence_thresh: str = None,
+    silence_duration: float = None
+) -> List[pathlib.Path]:
+    """
+    Use FFmpeg silencedetect to find chunk boundaries.
+
+    This is faster than VAD since FFmpeg uses native C code with no Python/PyTorch overhead.
+    Good for realtime use cases where latency matters.
+
+    Args:
+        path: Path to audio file
+        max_chunk_sec: Maximum chunk duration (default 90s)
+        silence_thresh: Silence threshold in dB (default from config)
+        silence_duration: Minimum silence duration in seconds (default from config)
+
+    Returns:
+        List of paths to temporary WAV chunk files
+    """
+    silence_thresh = silence_thresh or SILENCE_THRESHOLD
+    silence_duration = silence_duration or SILENCE_DURATION
+
+    # Get audio duration first
+    probe_cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", str(path)
+    ]
+    try:
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+        total_duration = float(result.stdout.strip())
+    except (subprocess.CalledProcessError, ValueError) as e:
+        logger.warning(f"ffprobe failed, falling back to VAD: {e}")
+        return vad_chunk_lowmem(path)
+
+    # Short audio - no chunking needed
+    if total_duration <= max_chunk_sec:
+        return [path]
+
+    # Run FFmpeg silencedetect
+    detect_cmd = [
+        "ffmpeg", "-v", "warning", "-i", str(path), "-af",
+        f"silencedetect=n={silence_thresh}:d={silence_duration}",
+        "-f", "null", "-"
+    ]
+    try:
+        result = subprocess.run(detect_cmd, capture_output=True, text=True)
+        stderr = result.stderr
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"silencedetect failed, falling back to VAD: {e}")
+        return vad_chunk_lowmem(path)
+
+    # Parse silence boundaries from stderr
+    # Format: [silencedetect @ ...] silence_start: 1.234
+    # Format: [silencedetect @ ...] silence_end: 2.345 | silence_duration: 1.111
+    silence_starts = [float(m) for m in re.findall(r'silence_start:\s*([\d.]+)', stderr)]
+    silence_ends = [float(m) for m in re.findall(r'silence_end:\s*([\d.]+)', stderr)]
+
+    # Build chunk boundaries at silence midpoints
+    # Prefer cutting at silence regions, respecting max_chunk_sec
+    cut_points = [0.0]
+    last_cut = 0.0
+
+    for start, end in zip(silence_starts, silence_ends):
+        midpoint = (start + end) / 2
+        time_since_cut = midpoint - last_cut
+
+        # Cut if we're past target duration and at a silence boundary
+        if time_since_cut >= max_chunk_sec * 0.7:  # Allow cuts at ~70% of max
+            cut_points.append(midpoint)
+            last_cut = midpoint
+        # Force cut if we've exceeded max duration
+        elif time_since_cut >= max_chunk_sec:
+            cut_points.append(midpoint)
+            last_cut = midpoint
+
+    cut_points.append(total_duration)
+
+    # If no good cut points found, fall back to fixed-duration chunks
+    if len(cut_points) <= 2:
+        num_chunks = int(total_duration / max_chunk_sec) + 1
+        cut_points = [i * max_chunk_sec for i in range(num_chunks)]
+        cut_points.append(total_duration)
+
+    # Extract chunks using FFmpeg
+    chunks = []
+    for i in range(len(cut_points) - 1):
+        start = cut_points[i]
+        duration = cut_points[i + 1] - start
+
+        if duration < 0.1:  # Skip very short chunks
+            continue
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+        tmp.close()
+
+        extract_cmd = [
+            "ffmpeg", "-v", "error", "-y",
+            "-ss", str(start), "-i", str(path),
+            "-t", str(duration),
+            "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(SAMPLE_RATE),
+            tmp.name
+        ]
+        try:
+            subprocess.run(extract_cmd, check=True, capture_output=True)
+            chunks.append(pathlib.Path(tmp.name))
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to extract chunk {i}: {e}")
+            # Clean up failed temp file
+            pathlib.Path(tmp.name).unlink(missing_ok=True)
+
+    logger.info(f"ffmpeg_silence_chunk: split {total_duration:.1f}s audio into {len(chunks)} chunks")
+    return chunks if chunks else [path]
+
+
+def get_chunker(method: str = None):
+    """
+    Get the chunking function based on method.
+
+    Args:
+        method: "vad" or "silence". Defaults to CHUNKING_METHOD from config.
+
+    Returns:
+        Chunking function (vad_chunk_lowmem or ffmpeg_silence_chunk)
+    """
+    method = method or CHUNKING_METHOD
+    if method == "silence":
+        return ffmpeg_silence_chunk
+    return vad_chunk_lowmem

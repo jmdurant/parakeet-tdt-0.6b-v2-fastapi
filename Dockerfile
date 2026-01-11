@@ -44,6 +44,8 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY ./parakeet_service ./parakeet_service
+COPY ./templates ./templates
+COPY ./static ./static
 COPY .env.example .env
 COPY --from=builder /opt/venv /opt/venv
 
