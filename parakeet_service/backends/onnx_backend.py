@@ -27,39 +27,55 @@ class OnnxResult:
 
 class OnnxBackend:
     """
-    ONNX-based ASR backend using onnx-asr library.
+    ONNX-based ASR backend using the onnx-asr library.
 
-    This backend provides faster inference with INT8 quantization.
-    Performance: ~181x realtime on T4 GPU with TensorRT.
+    Faster, lighter inference than NeMo (no PyTorch/NeMo dependency tree),
+    with optional INT8 quantization and GPU execution via onnxruntime.
 
-    Requires: pip install onnx-asr onnxruntime-gpu (or onnxruntime for CPU)
+    Requires: pip install onnx-asr 'onnxruntime-gpu==1.22.0' (or onnxruntime for CPU).
+    Pin note: newer onnxruntime-gpu wheels link CUDA 13 (libcudart.so.13); on a
+    CUDA-12 image that crashes at import, so pin to a CUDA-12 build (1.22.0 verified).
     """
 
-    def __init__(self, model_name: str = "base.int8"):
+    def __init__(self, model_name: str = "nemo-parakeet-tdt-0.6b-v3",
+                 quantization: str = "int8"):
         """
         Initialize ONNX backend.
 
         Args:
-            model_name: onnx-asr model variant
-                - "tiny", "tiny.int8"
-                - "base", "base.int8"
-                - "small", "small.int8"
+            model_name: onnx-asr registry name, e.g. "nemo-parakeet-tdt-0.6b-v3"
+                (must be a real onnx-asr model id — "base.int8" is NOT one).
+            quantization: "int8" for the fast quantized weights, "" for fp32.
         """
         self.model_name = model_name
+        self.quantization = quantization or None
         self._model = None
         self._cfg = OnnxConfig()
 
     def load(self) -> "OnnxBackend":
-        """Load the ONNX model."""
+        """Load the ONNX model onto the GPU when one is available."""
         try:
             import onnx_asr
+            import onnxruntime as ort
         except ImportError as e:
             raise ImportError(
-                "onnx-asr not installed. Install with: pip install onnx-asr onnxruntime-gpu"
+                "onnx-asr/onnxruntime not installed. "
+                "Install with: pip install onnx-asr 'onnxruntime-gpu==1.22.0'"
             ) from e
 
-        logger.info("Loading %s with ONNX backend...", self.model_name)
-        self._model = onnx_asr.load_model(self.model_name)
+        # Route inference onto CUDA explicitly — without providers, onnxruntime-gpu
+        # silently falls back to CPU.
+        available = ort.get_available_providers()
+        providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
+                     if "CUDAExecutionProvider" in available else ["CPUExecutionProvider"])
+
+        logger.info("Loading %s with ONNX backend (quant=%s, providers=%s)...",
+                    self.model_name, self.quantization, providers)
+        self._model = onnx_asr.load_model(
+            self.model_name,
+            quantization=self.quantization,
+            providers=providers,
+        )
         logger.info("ONNX backend ready")
         return self
 

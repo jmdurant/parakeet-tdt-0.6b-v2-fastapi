@@ -28,13 +28,14 @@ def load_backend(backend_type: str = None) -> ASRBackend:
     Returns:
         ASRBackend instance
     """
-    from ..config import MODEL_BACKEND, ONNX_MODEL_NAME, MODEL_NAME, MODEL_PRECISION, DEVICE
+    from ..config import (MODEL_BACKEND, ONNX_MODEL_NAME, ONNX_QUANTIZATION,
+                          MODEL_NAME, MODEL_PRECISION, DEVICE)
 
     backend_type = backend_type or MODEL_BACKEND
 
     if backend_type == "onnx":
         from .onnx_backend import OnnxBackend
-        return OnnxBackend(model_name=ONNX_MODEL_NAME)
+        return OnnxBackend(model_name=ONNX_MODEL_NAME, quantization=ONNX_QUANTIZATION)
     else:
         return NemoBackend(
             model_name=MODEL_NAME,

@@ -15,5 +15,6 @@ psutil
 # Optional ONNX backend (set MODEL_BACKEND=onnx in .env)
 # Uncomment if using ONNX backend:
 # onnx-asr
-# onnxruntime          # CPU only
-# onnxruntime-gpu      # CUDA/TensorRT (recommended for GPU)
+# onnxruntime               # CPU only
+# onnxruntime-gpu==1.22.0   # CUDA-12 build. Do NOT use latest: newer wheels link
+#                           # CUDA 13 (libcudart.so.13) and crash on CUDA-12 images.

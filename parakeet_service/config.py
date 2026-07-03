@@ -20,7 +20,10 @@ PROCESSING_TIMEOUT = int(os.getenv("PROCESSING_TIMEOUT", "60"))    # seconds
 
 # Backend selection: "nemo" (default) or "onnx"
 MODEL_BACKEND = os.getenv("MODEL_BACKEND", "nemo")
-ONNX_MODEL_NAME = os.getenv("ONNX_MODEL_NAME", "base.int8")
+# onnx_asr registry name — must be a real model id (NOT a Whisper-style "base.int8",
+# which never loaded Parakeet). Verified on GPU. Quantization is a separate load arg.
+ONNX_MODEL_NAME = os.getenv("ONNX_MODEL_NAME", "nemo-parakeet-tdt-0.6b-v3")
+ONNX_QUANTIZATION = os.getenv("ONNX_QUANTIZATION", "int8")  # "int8" (fast) or "" for fp32
 
 # Chunking method: "vad" (default, Silero VAD) or "silence" (FFmpeg silencedetect)
 CHUNKING_METHOD = os.getenv("CHUNKING_METHOD", "vad")
