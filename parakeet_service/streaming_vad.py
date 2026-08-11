@@ -1,5 +1,5 @@
 from __future__ import annotations
-import io, wave, tempfile, numpy as np, torch
+import io, wave, tempfile, numpy as np, torch, torchaudio
 from typing import List
 from torch.hub import load as torch_hub_load
 
@@ -26,7 +26,10 @@ class StreamingVAD:
     Emits temp-file *paths* when a full utterance is detected.
     """
 
-    def __init__(self):
+    def __init__(self, input_sample_rate: int = SAMPLE_RATE):
+        if input_sample_rate <= 0:
+            raise ValueError("input_sample_rate must be positive")
+        self.input_sample_rate = input_sample_rate
         self.vad = VADIterator(
             vad_model,
             sampling_rate=SAMPLE_RATE,
@@ -35,6 +38,7 @@ class StreamingVAD:
             speech_pad_ms=SPEECH_PAD_MS,
         )
         self.buffer = bytearray()
+        self.pending = np.empty(0, dtype=np.float32)
         self.speech_ms = 0
 
 
@@ -56,10 +60,18 @@ class StreamingVAD:
         out: List[str] = []
 
         pcm_f32 = np.frombuffer(frame_bytes, np.int16).astype("float32") / 32768
-        for start in range(0, len(pcm_f32), WINDOW_SAMPLES):
+        if self.input_sample_rate != SAMPLE_RATE and pcm_f32.size:
+            tensor = torch.from_numpy(pcm_f32)
+            pcm_f32 = torchaudio.functional.resample(
+                tensor, self.input_sample_rate, SAMPLE_RATE
+            ).numpy()
+        if self.pending.size:
+            pcm_f32 = np.concatenate((self.pending, pcm_f32))
+
+        complete = (len(pcm_f32) // WINDOW_SAMPLES) * WINDOW_SAMPLES
+        self.pending = pcm_f32[complete:].copy()
+        for start in range(0, complete, WINDOW_SAMPLES):
             window = pcm_f32[start:start + WINDOW_SAMPLES]
-            if len(window) < WINDOW_SAMPLES:
-                break  # wait for full 32 ms window
 
             voice_event = self.vad(window, return_seconds=False)
             self.buffer.extend(_f32_to_pcm16(window))
@@ -72,3 +84,10 @@ class StreamingVAD:
                 out.extend(self._flush())
 
         return out
+
+    def flush(self) -> List[str]:
+        """Flush residual audio when a websocket sends Vosk's EOF message."""
+        if self.pending.size:
+            self.buffer.extend(_f32_to_pcm16(self.pending))
+            self.pending = np.empty(0, dtype=np.float32)
+        return self._flush()

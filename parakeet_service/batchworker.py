@@ -1,4 +1,5 @@
 import asyncio, contextlib, logging, tempfile, pathlib, time, torch
+from dataclasses import dataclass
 from typing import Union, List
 
 from parakeet_service import model as mdl
@@ -7,9 +8,20 @@ logger = logging.getLogger("batcher")
 logger.setLevel(logging.DEBUG)
 
 # -------- shared state -------------------------------------------------------
-transcription_queue: asyncio.Queue[str | bytes] = asyncio.Queue()
-condition = asyncio.Condition()          # wakes websocket consumers
-results: dict[str, str] = {}             # path -> text
+@dataclass
+class TranscriptionJob:
+    payload: str | bytes
+    future: asyncio.Future[str]
+
+
+transcription_queue: asyncio.Queue[TranscriptionJob] = asyncio.Queue()
+
+
+async def transcribe_blob(blob: str | bytes) -> str:
+    """Queue one utterance and return only its result to the submitting client."""
+    future = asyncio.get_running_loop().create_future()
+    await transcription_queue.put(TranscriptionJob(blob, future))
+    return await future
 
 # -------- helper -------------------------------------------------------------
 def _as_path(blob: Union[str, bytes]) -> str:
@@ -29,21 +41,21 @@ async def batch_worker(model, batch_ms: float = 15.0, max_batch: int = 4):
     
 
     while True:
-        path = await transcription_queue.get()      # blocks until 1st item
-        batch: List[str] = [_as_path(path)]
+        job = await transcription_queue.get()      # blocks until 1st item
+        jobs: List[TranscriptionJob] = [job]
 
         # ---------- micro-batch gathering with timeout ----------
         deadline = time.monotonic() + batch_ms / 1000
-        while len(batch) < max_batch:
+        while len(jobs) < max_batch:
             timeout = deadline - time.monotonic()
             if timeout <= 0:
                 break
             try:
-                nxt = await asyncio.wait_for(transcription_queue.get(), timeout)
-                batch.append(_as_path(nxt))
+                jobs.append(await asyncio.wait_for(transcription_queue.get(), timeout))
             except asyncio.TimeoutError:
                 break
 
+        batch = [_as_path(item.payload) for item in jobs]
         logger.debug("processing %d-file batch", len(batch))
 
         # ---------- inference ----------
@@ -54,16 +66,17 @@ async def batch_worker(model, batch_ms: float = 15.0, max_batch: int = 4):
                 )                                       # NeMo API
         except Exception as exc:
             logger.exception("ASR failed: %s", exc)
-            for _ in batch:
+            for item in jobs:
+                if not item.future.done():
+                    item.future.set_exception(exc)
                 transcription_queue.task_done()
             continue
 
         # ---------- store results & notify ----------
-        for p, h in zip(batch, outs):
-            results[p] = getattr(h, "text", str(h))
+        for item, h in zip(jobs, outs):
+            if not item.future.done():
+                item.future.set_result(getattr(h, "text", str(h)))
             transcription_queue.task_done()            # mark done
-        async with condition:
-            condition.notify_all()
 
         # ---------- cleanup ----------
         for p in batch:

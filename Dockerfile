@@ -1,5 +1,7 @@
 # Stage 1: Builder stage for installing dependencies
-FROM python:3.10.7-slim AS builder
+# NeMo 3's safe tar extraction passes filter="data". Python 3.10.7 predates that
+# security API; 3.10.20 contains the maintained backport while preserving cp310 wheels.
+FROM python:3.10.20-slim AS builder
 
 # Model configuration - override with --build-arg or via docker-compose
 ARG PARAKEET_MODEL=nvidia/parakeet-tdt-0.6b-v3
@@ -34,7 +36,7 @@ RUN python -c "import torch; torch.hub.load('${SILERO_VAD_REPO}', 'silero_vad', 
 RUN python -c "import nemo.collections.asr as nemo_asr; nemo_asr.models.ASRModel.from_pretrained('${PARAKEET_MODEL}')"
 
 # Stage 2: Runtime stage
-FROM python:3.10.7-slim
+FROM python:3.10.20-slim
 
 # Install runtime dependencies
 RUN apt-get update && \
